@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quizzy
+      POSTGRES_PASSWORD: quizzy
+      POSTGRES_DB: quizzy
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - quizzy-postgres:/var/lib/postgresql/data
+      - ./db/init-test.sql:/docker-entrypoint-initdb.d/01-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quizzy -d quizzy"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: postgresql://quizzy:quizzy@db:5432/quizzy
+      PORT: 3000
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  test:
+    build: .
+    profiles: ["test"]
+    environment:
+      DATABASE_URL: postgresql://quizzy:quizzy@db:5432/quizzy_test
+      SEED_DEMO_DATA: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npm", "test"]
+
+volumes:
+  quizzy-postgres:
